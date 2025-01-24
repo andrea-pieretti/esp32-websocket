@@ -28,6 +28,7 @@ static SemaphoreHandle_t xwebsocket_mutex; // to lock the client array
 static QueueHandle_t xwebsocket_queue; // to hold the clients that send messages
 static ws_client_t clients[WEBSOCKET_SERVER_MAX_CLIENTS]; // holds list of clients
 static TaskHandle_t xtask; // the task itself
+static int MAX_CLIENT_NUM = WEBSOCKET_SERVER_MAX_CLIENTS;
 
 static void background_callback(struct netconn* conn, enum netconn_evt evt,u16_t len) {
   switch(evt) {
@@ -103,7 +104,7 @@ static void ws_server_task(void* pvParameters) {
     if(!conn) continue; // if the connection was NULL, ignore it
 
     xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY); // take access
-    for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
+    for(int i=0;i<MAX_CLIENT_NUM;i++) {
       if(clients[i].conn == conn) {
         handle_read(i);
         break;
@@ -114,8 +115,13 @@ static void ws_server_task(void* pvParameters) {
   vTaskDelete(NULL);
 }
 
-int ws_server_start() {
+int ws_server_start(int max_client_num) {
   if(xtask) return 0;
+
+  assert(max_client_num <= CONFIG_WEBSOCKET_SERVER_MAX_CLIENTS);
+
+  MAX_CLIENT_NUM = max_client_num;
+
   #if WEBSOCKET_SERVER_PINNED
   xTaskCreatePinnedToCore(&ws_server_task,
                           "ws_server_task",
@@ -200,7 +206,7 @@ int ws_server_add_client_protocol(struct netconn* conn,
   conn->callback = background_callback;
   netconn_write(conn,handshake,strlen(handshake),NETCONN_COPY);
 
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
+  for(int i=0;i<MAX_CLIENT_NUM;i++) {
     if(clients[i].conn) continue;
     clients[i] = ws_connect_client(conn,url,NULL,callback);
     callback(i,WEBSOCKET_CONNECT,NULL,0);
@@ -361,7 +367,7 @@ static int _send_clients_from_callback(WEBSOCKET_OPCODES_t opcode,char* url,char
     return ret;
   }
 
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
+  for(int i=0;i<MAX_CLIENT_NUM;i++) {
     if(clients[i].url != NULL && ws_is_connected(clients[i]) && !strcmp(clients[i].url,url)) {
       err = ws_send(&clients[i],opcode,msg,len,0);
       if(!err) ret += 1;
@@ -377,7 +383,7 @@ static int _send_clients_from_callback(WEBSOCKET_OPCODES_t opcode,char* url,char
 static int _send_all_from_callback(WEBSOCKET_OPCODES_t opcode,char* msg,uint64_t len) {
   int ret = 0;
   int err;
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
+  for(int i=0;i<MAX_CLIENT_NUM;i++) {
     if(ws_is_connected(clients[i])) {
       err = ws_send(&clients[i],opcode,msg,len,0);
       if(!err) ret += 1;
@@ -421,7 +427,7 @@ int ws_server_ping() {
   int ret = 0;
   int err;
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
+  for(int i=0;i<MAX_CLIENT_NUM;i++) {
     if(ws_is_connected(clients[i])) {
       err = ws_send(&clients[i],WEBSOCKET_OPCODE_PING,NULL,0,0);
       if(!err) {

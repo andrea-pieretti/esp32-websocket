@@ -37,7 +37,7 @@ extern "C" {
 #endif
 
 // starts the server
-int ws_server_start();
+int ws_server_start(int max_client_num);
 
 // ends the server
 int ws_server_stop();
